@@ -1,0 +1,5 @@
+out/
+raw/
+.venv/
+__pycache__/
+.pytest_cache/

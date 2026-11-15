@@ -1,0 +1,66 @@
+name: Refresh SBIR awards
+
+# Mondays 10:17 UTC: download SBIR.gov's two bulk award files (about 460 MB, two requests), rebuild the table,
+# compare its counts with the ones SBIR.gov shows on www.sbir.gov/awards (one request; the run stops there if
+# they differ), and upload to Hugging Face if SBIR.gov's file has changed since the last upload.
+#
+# Needs the HF_TOKEN repository secret (write access to abigailhaddad/sbir-awards). Without it the upload step
+# says so and skips. A failed run emails the repo owner.
+
+on:
+  schedule:
+    - cron: "17 10 * * 1"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Upload even if SBIR.gov's file hasn't changed"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q tests
+      - name: Build from SBIR.gov's bulk files
+        run: python src/build.py
+      - name: Compare counts with www.sbir.gov/awards
+        run: python src/check.py
+      - name: Upload to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_HUB_DISABLE_PROGRESS_BARS: "1"
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::notice::HF_TOKEN secret is not set; skipping the Hugging Face upload."
+            exit 0
+          fi
+          python src/publish.py ${{ inputs.force && '--force' || '' }}
+
+      # GitHub disables scheduled workflows in a public repo after 60 days with no commits.
+      - name: Keepalive commit
+        if: ${{ always() }}
+        run: |
+          age=$(( ( $(date +%s) - $(git log -1 --format=%ct) ) / 86400 ))
+          echo "newest commit is $age days old"
+          if [ "$age" -ge 45 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "Keepalive: no commits in $age days"
+            git push
+          fi
