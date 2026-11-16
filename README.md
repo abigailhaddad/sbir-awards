@@ -54,6 +54,10 @@ If SBIR.gov updates its site counts before its bulk file (or the other way aroun
 nothing is uploaded that week. That's on purpose: look at `checks/facets_<date>.json` from a local run to see which
 counts moved.
 
+If the awards page shows no counts at all (no "Showing 1-N of N results" line and no number after any label, as on
+2026-11-16), the check has nothing to compare against. It never reads a missing count as 0. The run skips the
+upload and the SQLite step, stays green, and opens a GitHub issue (or comments on the open one) with what it saw.
+
 Data: U.S. government data from SBIR.gov. Code: MIT.
 
 ## Data dictionary

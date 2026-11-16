@@ -4,6 +4,9 @@ name: Refresh SBIR awards
 # compare its counts with the ones SBIR.gov shows on www.sbir.gov/awards (one request; the run stops there if
 # they differ), and upload to Hugging Face if SBIR.gov's file has changed since the last upload.
 #
+# If the awards page shows no counts at all (as on 2026-11-16), there is nothing to compare against: the upload
+# and SQLite steps are skipped, the run stays green, and one open GitHub issue gets a comment for each such run.
+#
 # Needs the HF_TOKEN repository secret (write access to abigailhaddad/sbir-awards). Without it the upload step
 # says so and skips. A failed run emails the repo owner.
 
@@ -19,6 +22,7 @@ on:
 
 permissions:
   contents: write
+  issues: write  # the no-counts issue
 
 concurrency:
   group: refresh
@@ -39,9 +43,29 @@ jobs:
       - run: python -m pytest -q tests
       - name: Build from SBIR.gov's bulk files
         run: python src/build.py
+      # Sets steps.check.outputs.verified. Exits 1 if counts are on the page and differ; exits 0 with
+      # verified=false if the page shows no counts, so nothing below that publishes runs.
       - name: Compare counts with www.sbir.gov/awards
+        id: check
         run: python src/check.py
+
+      - name: Report that SBIR.gov showed no counts
+        if: ${{ steps.check.outputs.verified == 'false' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "SBIR.gov's awards page shows no counts; refresh not uploading"
+        run: |
+          echo "SBIR.gov's awards page shows no counts; could not verify; not uploading."
+          printf '\nRun: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> out/no_counts_issue.md
+          num=$(gh issue list --state open --limit 200 --json number,title --jq "[.[] | select(.title == env.TITLE)][0].number // empty")
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body-file out/no_counts_issue.md
+          else
+            gh issue create --title "$TITLE" --body-file out/no_counts_issue.md
+          fi
+
       - name: Upload to Hugging Face
+        if: ${{ steps.check.outputs.verified == 'true' }}
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_HUB_DISABLE_PROGRESS_BARS: "1"
@@ -56,6 +80,7 @@ jobs:
       # docs/tables.toml, build one SQLite file and attach it to the GitHub release `latest-data`. The release
       # is deleted and recreated whenever the Hugging Face commit changes, so it always holds one file.
       - name: SQLite file on the latest-data release
+        if: ${{ steps.check.outputs.verified == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

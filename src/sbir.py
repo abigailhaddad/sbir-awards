@@ -182,7 +182,10 @@ def build(current, abstracts=None):
 
 def facet_counts(html):
     """Counts SBIR.gov shows on https://www.sbir.gov/awards (unfiltered): total, and by agency, branch, phase,
-    program, year, state, demographic. Returns {"total": n, "agency": {label: n}, ...}."""
+    program, year, state, demographic. Returns {"total": n, "agency": {label: n}, ...}.
+
+    A missing number is None, never 0: "total" is None when the "Showing 1-10 of N results" line is absent, and a
+    label shown without "(n)" maps to None."""
     import html as h
     m = re.search(r"Showing 1-\d+ of (\d+) results", html)
     out = {"total": int(m.group(1)) if m else None}
@@ -192,10 +195,33 @@ def facet_counts(html):
         sub = text.startswith("⮡")
         text = text.lstrip("⮡ ").strip()
         mm = re.fullmatch(r"(.*?) \((\d+)\)", text)
-        label, n = (mm.group(1), int(mm.group(2))) if mm else (text, 0)
+        label, n = (mm.group(1), int(mm.group(2))) if mm else (text, None)
         key = "branch" if (kind == "agency" and sub) else kind
         out.setdefault(key, {})[label] = n
     return out
+
+
+def shows_no_counts(facets):
+    """True when the page carries no counts at all: no total and not one facet label with a number. (On
+    2026-11-16 SBIR.gov's awards page listed every label with no "(n)" and said "No results found.") Different
+    from counts that are present and differ: here there is nothing to compare against."""
+    if facets.get("total") is not None:
+        return False
+    return all(n is None for k, v in facets.items() if k != "total" for n in v.values())
+
+
+def no_counts_report(facets, html, day, ours_total):
+    """Text for the GitHub issue (or a comment on it) when shows_no_counts(facets)."""
+    labels = {k: len(v) for k, v in facets.items() if k != "total"}
+    shown = ", ".join(f"{n} {k}" for k, n in sorted(labels.items())) or "none"
+    no_results = "No results found" in html
+    return (f"**{day}**: SBIR.gov's awards page ({AWARDS_PAGE}) shows no counts, so the refresh could not verify "
+            f"the table and did not upload to Hugging Face.\n\n"
+            f"- \"Showing 1-N of N results\" line: not on the page\n"
+            f"- Facet labels on the page: {sum(labels.values())} ({shown}); with a count: 0\n"
+            f"- Page says \"No results found\": {'yes' if no_results else 'no'}\n"
+            f"- Our table: {ours_total:,} rows\n\n"
+            f"The run stays green on purpose. Nothing is published until a run compares the counts and they match.\n")
 
 
 def table_counts(df):
@@ -211,8 +237,9 @@ def table_counts(df):
 
 
 def compare(facets, ours, kinds=("agency", "phase", "program", "year")):
-    """List of (kind, label, sbir_gov, ours) where they differ. Facet labels with no count are skipped
-    (SBIR.gov shows some empty agencies with no number)."""
+    """List of (kind, label, sbir_gov, ours) where they differ. A facet label with no count (None) agrees only
+    with a label we don't have at all: SBIR.gov shows some empty agencies with no number. Call this only when
+    shows_no_counts(facets) is False."""
     diffs = []
     if facets.get("total") != ours["total"]:
         diffs.append(("total", "", facets.get("total"), ours["total"]))
@@ -222,6 +249,6 @@ def compare(facets, ours, kinds=("agency", "phase", "program", "year")):
         o = {a.casefold(): n for a, n in ours.get(k, {}).items()}
         for label in sorted(set(f) | set(o)):
             fv, ov = f.get(label, 0), o.get(label, 0)
-            if fv != ov:
+            if (0 if fv is None else fv) != ov:
                 diffs.append((k, label, fv, ov))
     return diffs
