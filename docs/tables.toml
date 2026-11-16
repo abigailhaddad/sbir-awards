@@ -1,0 +1,58 @@
+# Column descriptions for the published table. src/data_docs.py reads this file and the parquet file and
+# writes docs/data_dictionary.md; it stops with an error if a parquet column is missing here or a column
+# here is not in the parquet, so the dictionary can't drift from the schema.
+#
+# Each description comes from the code that builds the column (src/sbir.py, src/build.py) and, for the
+# columns copied from SBIR.gov's file, from SBIR.gov's award data dictionary
+# (https://www.sbir.gov/data-resources/data-dictionary/award, read 2026-11-16; quoted where used). A column
+# listed in `unconfirmed` is one whose meaning SBIR.gov doesn't define, or defines in a way that contradicts
+# another field; the dictionary marks it.
+
+dataset = "abigailhaddad/sbir-awards"
+
+[tables.awards]
+file = "awards.parquet"
+config = "default"
+grain = "One row per row of SBIR.gov's bulk file `award_data_no_abstract.csv`, in the same order. Nothing is dropped, deduplicated or corrected."
+primary_key = "record_id"
+unconfirmed = ["date_of_notification", "number_employees", "ri_poc_name"]
+
+[tables.awards.columns]
+record_id = "Added. First 12 hex characters of the SHA-1 of agency, branch, program, phase, company, award title, contract, agency tracking number, award year, award amount, proposal award date, UEI and DUNS. A row that repeats an earlier one in all of these gets `-2`, `-3`. SBIR.gov's file has no award id."
+company = "Company. SBIR.gov: \"Name of the business\". As published, outer spaces removed (as for every text column)."
+award_title = "Award Title. SBIR.gov: \"Title of the project\". Some are `Not Available` or `N/A` as published."
+agency = "Agency. SBIR.gov: \"Agency making the award\". The file says `Department of Defense` where SBIR.gov's site says Department of War."
+branch = "Branch: the sub-unit of the agency (e.g. `Air Force`, `National Institutes of Health`). Blank for agencies with no sub-units listed."
+phase = "Phase: `Phase I`, `Phase II` or `Phase II – Direct to Phase II`."
+program = "Program: `SBIR` or `STTR`."
+agency_tracking_number = "Agency Tracking Number. SBIR.gov: \"Unique code assigned by the agency/branch that made the Phase 1 submission\". Not unique in the file."
+contract = "Contract. SBIR.gov labels it Contract/Grant #. Not unique: some agencies list one solicitation-wide number for many awards."
+proposal_award_date = "Proposal Award Date. SBIR.gov: \"The first day of contract performance\". Blank on many rows; some dates are impossible as published (years like 1905 or 5025)."
+contract_end_date = "Contract End Date. SBIR.gov: \"The last day of contract performance\"."
+solicitation_number = "Solicitation Number, as published."
+solicitation_year = "Solicitation Year. SBIR.gov: \"The Fiscal Year in which the proposal was submitted\"."
+solicitation_close_date = "Solicitation Close Date. SBIR.gov: \"The date of the solicitation close for the solicitation\"."
+proposal_receipt_date = "Proposal Receipt Date. SBIR.gov: \"The Date the Proposal was submitted\"."
+date_of_notification = "Date of Notification, as published. SBIR.gov's dictionary defines it with the same words as `proposal_award_date` (\"The first day of contract performance\"), but where both are filled they differ on most rows, so what it records isn't settled."
+topic_code = "Topic Code. SBIR.gov: \"The code or number for the topic or subtopic\"."
+award_year = "Award Year. SBIR.gov: \"The Fiscal year of the award\". The only date on every row."
+award_amount = "Award Amount: SBIR.gov's total award amount, not obligations. Some rows are 0 or blank."
+uei = "UEI. SBIR.gov: \"Unique Entity Identifier assigned by SAM.gov\". Blank on most older awards (UEIs replaced DUNS in 2022)."
+duns = "Duns: Dun & Bradstreet DUNS number, as published (text, leading zeros kept)."
+hubzone_owned = "HUBZone Owned: `Y`, `N` or `U` (unknown) as published. Doesn't always agree with SBIR.gov's award pages or its site's filter counts."
+socially_economically_disadvantaged = "Socially and Economically Disadvantaged: `Y`, `N` or `U`. SBIR.gov: \"This field was previously known-as 'Minority-Owned'\"."
+woman_owned = "Woman Owned: `Y`, `N` or `U`. SBIR.gov: \"At least 51% owned by women\". Doesn't always agree with SBIR.gov's award pages or its site's filter counts."
+number_employees = "Number Employees, as published. SBIR.gov's dictionary gives no definition (it repeats the name), so it doesn't say when the count was taken or what it includes."
+company_website = "Company Website. SBIR.gov: \"The URL for the company's website\"."
+address1 = "Address1 (the company's address), as published."
+address2 = "Address2, as published."
+city = "City, as published; capitalization varies."
+state = "State: full state name, as published."
+zip = "Zip, as published (text). Some are `-`."
+pi_name = "PI Name: the principal investigator's name, as published (often with a double space between names)."
+pi_title = "PI Title: the principal investigator's title, as published."
+ri_name = "RI Name: the research institution's name, as published. Filled on most STTR rows. On SBIR rows it is almost always blank or `Stub`, which SBIR.gov does not explain."
+ri_poc_name = "RI POC Name, as published. Not in SBIR.gov's dictionary; by its name, a research institution point of contact. Some rows are `Not  Available`."
+exact_duplicate = "Added. True if the source row repeats another source row in every column (including the columns left out of this table)."
+possible_duplicate_count = "Added. How many rows share this row's agency, company, phase, award year, title and amount (company and title compared on letters and digits only, case ignored). 1 for most rows. Rows with 2 or more are kept: SBIR.gov's own counts include them."
+abstract = "Added. Copied from SBIR.gov's older bulk file with abstracts (`award_data.csv`) when this row matches exactly one row there on agency, company, contract, tracking number, phase, award year, title and amount. Blank otherwise, which includes most recent awards. SBIR.gov: \"Description of the award\"."
