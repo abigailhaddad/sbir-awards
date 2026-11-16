@@ -112,3 +112,82 @@ def test_award_page_parse():
     assert p["amount"] == "$59,999,818" and p["contract"] == "FA2401-25-9-0013"
     assert p["phase"] == "Phase II" and p["agency"] == "Department of Defense" and p["branch"] == "Air Force"
     assert p["start"] == "September 30, 2025"
+
+
+# --- the count check's three outcomes (src/check.py) ---------------------------------------------------------
+
+def _page(name):
+    return open(os.path.join(F, name), encoding="utf-8").read()
+
+
+def _ours_matching(html):
+    """Counts shaped like table_counts() that agree with the page: labels shown without a number are absent."""
+    f = sbir.facet_counts(html)
+    return {k: (v if k == "total" else {a: n for a, n in v.items() if n is not None}) for k, v in f.items()}
+
+
+def test_facets_missing_count_is_none_not_zero():
+    f = sbir.facet_counts(_page("awards_page.html"))
+    assert f["agency"]["Small Business Administration"] is None  # shown on 2026-11-15 with no "(n)"
+    assert not sbir.shows_no_counts(f)
+
+
+def test_page_with_no_counts_detected():
+    # www.sbir.gov/awards on 2026-11-16: every label, no "(n)", no "Showing 1-N of N results"
+    f = sbir.facet_counts(_page("awards_page_no_counts.html"))
+    assert f["total"] is None
+    assert sum(len(v) for k, v in f.items() if k != "total") == 150
+    assert all(n is None for k, v in f.items() if k != "total" for n in v.values())
+    assert sbir.shows_no_counts(f)
+
+
+def test_no_counts_needs_both_total_and_labels_missing():
+    assert not sbir.shows_no_counts({"total": 5, "agency": {"NASA": None}})
+    assert not sbir.shows_no_counts({"total": None, "agency": {"NASA": None, "DOE": 3}})
+    assert sbir.shows_no_counts({"total": None, "agency": {"NASA": None}})
+
+
+def test_compare_label_without_count():
+    facets = {"total": 3, "agency": {"NASA": 3, "SBA": None}}
+    assert sbir.compare(facets, {"total": 3, "agency": {"NASA": 3}}, kinds=("agency",)) == []
+    assert sbir.compare(facets, {"total": 4, "agency": {"NASA": 3, "SBA": 1}}, kinds=("agency",)) == [
+        ("total", "", 3, 4), ("agency", "sba", None, 1)]
+
+
+def test_check_no_counts_skips_upload(tmp_path):
+    import check
+    html = _page("awards_page_no_counts.html")
+    out, issue = tmp_path / "gh_output", tmp_path / "out" / "issue.md"
+    ours = {"total": 219780, "agency": {"NASA": 1}}
+    assert check.run(html, ours, "2026-11-16", checks_dir=tmp_path, issue_path=str(issue),
+                     github_output=str(out)) == "no_counts"  # returns: no exception, exit 0
+    assert out.read_text() == "verified=false\n"
+    text = issue.read_text()
+    assert "2026-11-16" in text and "shows no counts" in text and "did not upload" in text
+    assert "Facet labels on the page: 150" in text and "with a count: 0" in text
+    assert "\"No results found\": yes" in text and "219,780 rows" in text
+    assert (tmp_path / "facets_2026-11-16.json").exists()
+
+
+def test_check_counts_equal_uploads(tmp_path):
+    import check
+    html = _page("awards_page.html")
+    out = tmp_path / "gh_output"
+    assert check.run(html, _ours_matching(html), "2026-11-15", checks_dir=tmp_path,
+                     issue_path=str(tmp_path / "issue.md"), github_output=str(out)) == "match"
+    assert out.read_text() == "verified=true\n"
+    assert not (tmp_path / "issue.md").exists()
+
+
+def test_check_counts_differ_fails(tmp_path):
+    import check
+    html = _page("awards_page.html")
+    ours = _ours_matching(html)
+    ours["year"]["1983"] += 1
+    out = tmp_path / "gh_output"
+    with pytest.raises(SystemExit) as e:
+        check.run(html, ours, "2026-11-15", checks_dir=tmp_path, issue_path=str(tmp_path / "issue.md"),
+                  github_output=str(out))
+    assert "1 counts differ" in str(e.value)
+    assert out.read_text() == "verified=false\n"
+    assert not (tmp_path / "issue.md").exists()
