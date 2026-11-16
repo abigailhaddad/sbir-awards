@@ -55,3 +55,18 @@ nothing is uploaded that week. That's on purpose: look at `checks/facets_<date>.
 counts moved.
 
 Data: U.S. government data from SBIR.gov. Code: MIT.
+
+## Data dictionary
+
+[`docs/data_dictionary.md`](docs/data_dictionary.md) lists every column of the table with its type, a description, the share of rows that have a value, and an example. Types, counts and examples are read from the published parquet files; descriptions are in [`docs/tables.toml`](docs/tables.toml), written from the code that builds each column and SBIR.gov's [award data dictionary](https://www.sbir.gov/data-resources/data-dictionary/award). Regenerate it with
+
+    python src/data_docs.py fetch data   # download the current files from Hugging Face
+    python src/data_docs.py write data   # write docs/data_dictionary.md
+
+`src/build.py` puts the same section on the Hugging Face dataset card (`out/README.md`). Both stop with an error if a parquet column has no description in `docs/tables.toml` or a described column is gone, and the weekly workflow runs that check too.
+
+## SQLite download
+
+The weekly workflow builds `sbir-awards.sqlite` from the files on Hugging Face (table `awards`, plus `_source`, which records the Hugging Face commit) and attaches it (about 430 MiB) to the GitHub release [`latest-data`](https://github.com/abigailhaddad/sbir-awards/releases/tag/latest-data). The release is replaced whenever the Hugging Face commit changes. To build it yourself:
+
+    python src/build_sqlite.py data sbir-awards.sqlite

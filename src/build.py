@@ -73,12 +73,17 @@ def main():
     con.close()
     with open(f"{OUT}/report.json", "w") as fh:
         json.dump(report, fh, indent=1)
+    # Data dictionary from out/awards.parquet and docs/tables.toml (src/data_docs.py); stops if the columns
+    # no longer match the descriptions.
+    import data_docs
+    dictionary = data_docs.markdown(OUT, level=2, source="the file in this dataset")
     with open(f"{OUT}/README.md", "w") as fh:
-        fh.write(card(report))
+        fh.write(card(report, dictionary))
     print(json.dumps({k: v for k, v in report.items() if k != "by_year"}, indent=1))
 
 
-def card(r):
+def card(r, dictionary=""):
+    """The dataset card. `dictionary` is the data dictionary section from src/data_docs.py."""
     lm = r["current_file_last_modified"]
     return f"""---
 license: other
@@ -166,6 +171,7 @@ pages show the rest.
 - `contract` is not unique: some agencies list one solicitation-wide number for many awards.
 - Agency and branch are SBIR.gov's labels. `branch` is blank for agencies with no sub-units listed.
 
+{dictionary}
 Data: U.S. government data from SBIR.gov. Code: MIT.
 """
 
